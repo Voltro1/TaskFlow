@@ -107,21 +107,18 @@ export default function Dashboard({
           <StatCard
             label="Active projects"
             value={activeCount}
-            change="+2 this month"
             icon={<ProjectIcon className="w-5 h-5" />}
             color="indigo"
           />
           <StatCard
             label="Total tasks"
             value={totalTasks}
-            change="+14 this week"
             icon={<CheckCircleIcon className="w-5 h-5" />}
             color="purple"
           />
           <StatCard
             label="Completed tasks"
             value={completedTasks}
-            change={`${completionRate}% rate`}
             icon={<CheckCircleIcon className="w-5 h-5" />}
             color="green"
           />
