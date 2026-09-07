@@ -35,33 +35,41 @@ const TASK_COLUMNS = `
   LEFT JOIN users c ON c.id = t.created_by_id
 `;
 
+// check project assignee
 async function assertProjectAssignee(projectId, assigneeId) {
-  if (!assigneeId) return;
-  const rows = await query('SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ? LIMIT 1', [projectId, assigneeId]);
-  if (rows.length === 0) throw new AppError('Assignee must be a project member', 422);
+  if (!assigneeId) {
+    return;
+  }
+  const rows = await query(
+    'SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ? LIMIT 1',
+    [projectId, assigneeId]
+  );
+  if (rows.length === 0) {
+    throw new AppError('Assignee must be a project member', 422);
+  }
 }
 
+// get task details
 async function getTaskRecord(taskId) {
   const rows = await query(`${TASK_COLUMNS} WHERE t.id = ? LIMIT 1`, [taskId]);
   return mapTaskRow(rows[0]);
 }
 
-function buildTaskFilterWhere(baseConditions, extraConditions = []) {
-  const conditions = [...baseConditions, ...extraConditions];
-  return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-}
-
-async function listTasksByConditions(conditions, params, { page = 1, limit = 25 }) {
+// listing
+async function listTasksByConditions(
+  conditions,
+  params,
+  { page = 1, limit = 25 }
+) {
   const paging = normalizePaging({ page, limit });
-  const where = buildTaskFilterWhere(conditions);
-  const offset = (paging.page - 1) * paging.limit;
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const rows = await query(
     `
       ${TASK_COLUMNS}
       ${where}
       ORDER BY t.created_at DESC
-      LIMIT ${paging.limit} OFFSET ${offset}
+      LIMIT ${paging.limit} OFFSET ${paging.offset}
     `,
     params
   );
@@ -88,33 +96,42 @@ async function listTasksByConditions(conditions, params, { page = 1, limit = 25 
   };
 }
 
+// normalize task status
 function normalizeStatus(value) {
-  if (value === 'in-progress') return 'in_progress';
-  if (value === 'in-review') return 'in_review';
+  if (value === 'in-progress') {
+    return 'in_progress';
+  }
+  if (value === 'in-review') {
+    return 'in_review';
+  }
   return value;
 }
 
+// check personal assignee
 function validatePersonalAssignee(assigneeId, userId) {
-  if (assigneeId === null || assigneeId === undefined) return;
+  if (assigneeId === null || assigneeId === undefined) {
+    return;
+  }
   if (String(assigneeId) !== String(userId)) {
     throw new AppError('Personal tasks can only be assigned to you', 422);
   }
 }
 
-async function getPersonalTaskAccess(task, user) {
+// check task ownership
+function requirePersonalTaskAccess(task, user) {
   const ownerId = task.createdBy?.id ?? null;
-  if (ownerId !== user.id) throw new AppError('You do not have access to this task', 403);
+  if (ownerId !== user.id) {
+    throw new AppError('You do not have access to this task', 403);
+  }
 }
 
-async function getProjectTaskAccess(task, user) {
-  await getProjectAccess(task.projectId, user);
-}
-
+// get project role
 async function getProjectTaskRole(task, user) {
   const { role } = await getProjectAccess(task.projectId, user);
   return role;
 }
 
+// check restricted changes
 function hasAdministrativeTaskChanges(values) {
   return [
     'title',
@@ -129,12 +146,18 @@ function hasAdministrativeTaskChanges(values) {
   ].some((field) => Object.prototype.hasOwnProperty.call(values, field));
 }
 
+// check status changes
 function hasOnlyStatusChange(values) {
   const keys = Object.keys(values);
   return keys.length > 0 && keys.every((field) => field === 'status');
 }
 
-export async function listTasks(projectId, user, { status, priority, assignee, search, page = 1, limit = 25 }) {
+// list tasks
+export async function listTasks(
+  projectId,
+  user,
+  { status, priority, assignee, search, page = 1, limit = 25 }
+) {
   await getProjectAccess(projectId, user);
 
   const conditions = ['t.project_id = ?'];
@@ -160,7 +183,11 @@ export async function listTasks(projectId, user, { status, priority, assignee, s
   return listTasksByConditions(conditions, params, { page, limit });
 }
 
-export async function listPersonalTasks(user, { status, priority, search, page = 1, limit = 25 }) {
+// list personal tasks
+export async function listPersonalTasks(
+  user,
+  { status, priority, search, page = 1, limit = 25 }
+) {
   const conditions = ['t.project_id IS NULL', 't.created_by_id = ?'];
   const params = [user.id];
 
@@ -180,6 +207,7 @@ export async function listPersonalTasks(user, { status, priority, search, page =
   return listTasksByConditions(conditions, params, { page, limit });
 }
 
+// create task
 export async function createTask(projectId, user, values) {
   const { project, role } = await getProjectAccess(projectId, user);
   requireProjectCapability(role, 'create_task');
@@ -225,6 +253,7 @@ export async function createTask(projectId, user, values) {
   return getTask(taskId, user);
 }
 
+// create personal task
 export async function createPersonalTask(user, values) {
   validatePersonalAssignee(values.assignee ?? null, user.id);
   const taskId = await withTransaction(async (connection) => {
@@ -263,32 +292,42 @@ export async function createPersonalTask(user, values) {
   return getTask(taskId, user);
 }
 
+// get task
 export async function getTask(taskId, user) {
   const task = await getTaskRecord(taskId);
-  if (!task) throw new AppError('Task not found', 404);
+  if (!task) {
+    throw new AppError('Task not found', 404);
+  }
   if (task.projectId) {
-    await getProjectTaskAccess(task, user);
+    await getProjectAccess(task.projectId, user);
   } else {
-    await getPersonalTaskAccess(task, user);
+    requirePersonalTaskAccess(task, user);
   }
   return task;
 }
 
+// update task
 export async function updateTask(taskId, user, values) {
   const current = await getTask(taskId, user);
 
   const isPersonal = !current.projectId;
   let projectRole = null;
   if (isPersonal) {
-    await getPersonalTaskAccess(current, user);
+    requirePersonalTaskAccess(current, user);
   } else {
     projectRole = await getProjectTaskRole(current, user);
     if (projectRole === 'member') {
       if (current.assignee?.id !== user.id) {
-        throw new AppError('Members can only update tasks assigned to them', 403);
+        throw new AppError(
+          'Members can only update tasks assigned to them',
+          403
+        );
       }
       if (!hasOnlyStatusChange(values)) {
-        throw new AppError('Members can only change the status of their assigned tasks', 403);
+        throw new AppError(
+          'Members can only change the status of their assigned tasks',
+          403
+        );
       }
     } else if (hasAdministrativeTaskChanges(values)) {
       requireProjectCapability(projectRole, 'edit_task');
@@ -317,7 +356,10 @@ export async function updateTask(taskId, user, values) {
     if (!isPersonal) {
       requireProjectCapability(projectRole, 'change_task_status');
       if (projectRole === 'member' && current.assignee?.id !== user.id) {
-        throw new AppError('Members can only change the status of tasks assigned to them', 403);
+        throw new AppError(
+          'Members can only change the status of tasks assigned to them',
+          403
+        );
       }
     }
     assignments.push('status = ?');
@@ -363,15 +405,21 @@ export async function updateTask(taskId, user, values) {
   }
 
   if (assignments.length > 0) {
-    await query(`UPDATE tasks SET ${assignments.join(', ')} WHERE id = ?`, [...params, taskId]);
+    await query(`UPDATE tasks SET ${assignments.join(', ')} WHERE id = ?`, [
+      ...params,
+      taskId
+    ]);
   }
 
   return getTask(taskId, user);
 }
 
+// claim task
 export async function claimTask(taskId, user) {
   const current = await getTask(taskId, user);
-  if (!current.projectId) throw new AppError('Only project tasks can be claimed', 400);
+  if (!current.projectId) {
+    throw new AppError('Only project tasks can be claimed', 400);
+  }
 
   const role = await getProjectTaskRole(current, user);
   requireProjectCapability(role, 'claim_task');
@@ -405,10 +453,11 @@ export async function claimTask(taskId, user) {
   return getTask(taskId, user);
 }
 
+// delete task
 export async function deleteTask(taskId, user) {
   const current = await getTask(taskId, user);
   if (!current.projectId) {
-    await getPersonalTaskAccess(current, user);
+    requirePersonalTaskAccess(current, user);
   } else {
     const { role } = await getProjectAccess(current.projectId, user);
     requireProjectCapability(role, 'delete_task');

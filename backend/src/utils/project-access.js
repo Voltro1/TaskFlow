@@ -1,6 +1,7 @@
 import { query } from '../config/database.js';
 import { AppError } from './app-error.js';
 
+// get project access
 export async function getProjectAccess(projectId, user) {
   const rows = await query(
     `
@@ -23,7 +24,11 @@ export async function getProjectAccess(projectId, user) {
     [user.id, projectId]
   );
   const project = rows[0];
-  if (!project) throw new AppError('Project not found', 404);
-  if (!project.membershipRole) throw new AppError('You do not have access to this project', 403);
+  if (!project) {
+    throw new AppError('Project not found', 404);
+  }
+  if (!project.membershipRole) {
+    throw new AppError('You do not have access to this project', 403);
+  }
   return { project, role: project.membershipRole };
 }

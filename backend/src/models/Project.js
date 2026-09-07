@@ -1,7 +1,8 @@
-export const PROJECT_MEMBER_ROLES = Object.freeze(['owner', 'editor', 'viewer']);
-
+// map project records
 export function mapProjectRow(row) {
-  if (!row) return null;
+  if (!row) {
+    return null;
+  }
   return {
     id: row.id,
     name: row.name,

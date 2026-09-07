@@ -5,10 +5,31 @@ import { validate } from '../middleware/validate.js';
 import { getCurrentUser, login, register } from '../controllers/auth.controller.js';
 
 export const authRouter = Router();
-const credentials = [body('email').isEmail().customSanitizer((value) => String(value).trim().toLowerCase()), body('password').isString().isLength({ min: 8, max: 128 })];
 
-authRouter.post('/register', [body('name').trim().isLength({ min: 2, max: 80 }), body('username').optional().trim().matches(/^[a-zA-Z0-9_.-]{2,80}$/), ...credentials], validate, register);
+// login conditions
+const credentials = [
+  body('email')
+    .isEmail()
+    .customSanitizer((value) => String(value).trim().toLowerCase()),
+  body('password').isString().isLength({ min: 8, max: 128 })
+];
 
+// new account
+authRouter.post('/register',
+  [
+    body('name').trim().isLength({ min: 2, max: 80 }),
+    body('username')
+      .optional()
+      .trim()
+      .matches(/^[a-zA-Z0-9_.-]{2,80}$/),
+    ...credentials
+  ],
+  validate,
+  register
+);
+
+// login
 authRouter.post('/login', credentials, validate, login);
 
+// get own profile
 authRouter.get('/me', authenticate, getCurrentUser);

@@ -1,7 +1,11 @@
+// map user records
 export const USER_ROLES = Object.freeze(['user', 'admin']);
 
+// map user details
 export function mapUserRow(row) {
-  if (!row) return null;
+  if (!row) {
+    return null;
+  }
   return {
     id: row.id,
     name: row.name,
@@ -14,8 +18,11 @@ export function mapUserRow(row) {
   };
 }
 
+// include password hash
 export function mapUserAuthRow(row) {
-  if (!row) return null;
+  if (!row) {
+    return null;
+  }
   return {
     ...mapUserRow(row),
     passwordHash: row.passwordHash ?? row.password_hash

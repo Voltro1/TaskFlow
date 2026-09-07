@@ -1,8 +1,22 @@
-export const TASK_STATUSES = Object.freeze(['todo', 'in_progress', 'in_review', 'done']);
-export const TASK_PRIORITIES = Object.freeze(['low', 'medium', 'high', 'urgent']);
+// map task records
+export const TASK_STATUSES = Object.freeze([
+  'todo',
+  'in_progress',
+  'in_review',
+  'done'
+]);
+export const TASK_PRIORITIES = Object.freeze([
+  'low',
+  'medium',
+  'high',
+  'urgent'
+]);
 
+// map task details
 export function mapTaskRow(row) {
-  if (!row) return null;
+  if (!row) {
+    return null;
+  }
   return {
     id: row.id,
     projectId: row.projectId ?? row.project_id,

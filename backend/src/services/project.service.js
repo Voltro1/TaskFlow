@@ -19,15 +19,21 @@ const USER_COLUMNS = `
   FROM users
 `;
 
+// load project owners
 async function loadUsersByIds(ids) {
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0) {
+    return new Map();
+  }
   const placeholders = ids.map(() => '?').join(', ');
   const rows = await query(`${USER_COLUMNS} WHERE id IN (${placeholders})`, ids);
   return new Map(rows.map((row) => [row.id, mapUserRow(row)]));
 }
 
+// load project members
 async function loadProjectMembersByProjectIds(projectIds) {
-  if (projectIds.length === 0) return new Map();
+  if (projectIds.length === 0) {
+    return new Map();
+  }
   const placeholders = projectIds.map(() => '?').join(', ');
   const rows = await query(
     `
@@ -64,8 +70,12 @@ async function loadProjectMembersByProjectIds(projectIds) {
   return membersByProject;
 }
 
+// enrich database results
 async function hydrateProjects(projectRows) {
-  if (projectRows.length === 0) return [];
+  if (projectRows.length === 0) {
+    return [];
+  }
+
   const ownerIds = [...new Set(projectRows.map((project) => project.ownerId))];
   const projectIds = projectRows.map((project) => project.id);
   const [owners, membersByProject] = await Promise.all([
@@ -80,13 +90,15 @@ async function hydrateProjects(projectRows) {
   }));
 }
 
-export async function listProjects(user, { archived, search, page = 1, limit = 25 }) {
+// list projects
+export async function listProjects(user,
+  { archived, search, page = 1, limit = 25 }
+) {
   const paging = normalizePaging({ page, limit });
   const conditions = [];
   const params = [];
-  let joins = '';
-
-  joins = 'INNER JOIN project_members pm_user ON pm_user.project_id = p.id AND pm_user.user_id = ?';
+  const joins =
+    'INNER JOIN project_members pm_user ON pm_user.project_id = p.id AND pm_user.user_id = ?';
   params.push(user.id);
 
   if (archived !== undefined) {
@@ -142,6 +154,7 @@ export async function listProjects(user, { archived, search, page = 1, limit = 2
   };
 }
 
+// create project
 export async function createProject(user, values) {
   const projectId = await withTransaction(async (connection) => {
     const [result] = await connection.execute(
@@ -169,12 +182,14 @@ export async function createProject(user, values) {
   return getProject(projectId, user);
 }
 
+// get project
 export async function getProject(projectId, user) {
   const { project } = await getProjectAccess(projectId, user);
   const hydrated = await hydrateProjects([project]);
   return hydrated[0];
 }
 
+// update project
 export async function updateProject(projectId, user, values) {
   const { project, role } = await getProjectAccess(projectId, user);
   requireProjectCapability(role, 'edit_project');
@@ -204,28 +219,42 @@ export async function updateProject(projectId, user, values) {
   }
 
   if (assignments.length > 0) {
-    await query(`UPDATE projects SET ${assignments.join(', ')} WHERE id = ?`, [...params, project.id]);
+    await query(`UPDATE projects SET ${assignments.join(', ')} WHERE id = ?`, [
+      ...params,
+      project.id
+    ]);
   }
 
   return getProject(projectId, user);
 }
 
+// delete project
 export async function deleteProject(projectId, user) {
   const { project, role } = await getProjectAccess(projectId, user);
   requireProjectCapability(role, 'delete_project');
 
   await withTransaction(async (connection) => {
-    await connection.execute('DELETE FROM tasks WHERE project_id = ?', [project.id]);
-    await connection.execute('DELETE FROM project_members WHERE project_id = ?', [project.id]);
+    await connection.execute('DELETE FROM tasks WHERE project_id = ?', [
+      project.id
+    ]);
+    await connection.execute(
+      'DELETE FROM project_members WHERE project_id = ?',
+      [project.id]
+    );
     await connection.execute('DELETE FROM projects WHERE id = ?', [project.id]);
   });
 }
 
+// add member
 export async function addMember(projectId, actor, { email, role }) {
   const { project, role: actorRole } = await getProjectAccess(projectId, actor);
   requireProjectCapability(actorRole, 'manage_members');
-  if (role === 'owner') throw new AppError('Project owners are managed automatically', 400);
-  if (role === 'admin') requireProjectCapability(actorRole, 'manage_admins');
+  if (role === 'owner') {
+    throw new AppError('Project owners are managed automatically', 400);
+  }
+  if (role === 'admin') {
+    requireProjectCapability(actorRole, 'manage_admins');
+  }
 
   const users = await query(
     `
@@ -246,8 +275,12 @@ export async function addMember(projectId, actor, { email, role }) {
   );
 
   const user = mapUserRow(users[0]);
-  if (!user) throw new AppError('User not found', 404);
-  if (user.id === project.ownerId) throw new AppError('The owner is already part of this project', 400);
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+  if (user.id === project.ownerId) {
+    throw new AppError('The owner is already part of this project', 400);
+  }
 
   await withTransaction(async (connection) => {
     const [existing] = await connection.execute(
@@ -256,7 +289,9 @@ export async function addMember(projectId, actor, { email, role }) {
     );
 
     if (existing.length > 0) {
-      if (existing[0].role === 'owner') throw new AppError('The owner cannot be reassigned', 400);
+      if (existing[0].role === 'owner') {
+        throw new AppError('The owner cannot be reassigned', 400);
+      }
       await connection.execute(
         'UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?',
         [role, project.id, user.id]
@@ -273,11 +308,19 @@ export async function addMember(projectId, actor, { email, role }) {
   return getProject(projectId, actor);
 }
 
+// remove member
 export async function removeMember(projectId, userId, actor) {
   const { project, role } = await getProjectAccess(projectId, actor);
   requireProjectCapability(role, 'manage_members');
-  if (Number(actor.id) === Number(userId)) throw new AppError('Admins cannot remove themselves from a project', 400);
-  if (project.ownerId === userId) throw new AppError('The owner cannot be removed', 400);
+  if (Number(actor.id) === Number(userId)) {
+    throw new AppError('Admins cannot remove themselves from a project', 400);
+  }
+  if (project.ownerId === userId) {
+    throw new AppError('The owner cannot be removed', 400);
+  }
 
-  await query('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', [project.id, userId]);
+  await query(
+    'DELETE FROM project_members WHERE project_id = ? AND user_id = ?',
+    [project.id, userId]
+  );
 }
